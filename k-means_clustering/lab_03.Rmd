@@ -1,0 +1,140 @@
+---
+title: "K-means CLustering Lab"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+library(readr)
+library(png)
+```
+
+## Question 1 
+**How many different types of hieroglyphics do you see?**
+*Answered in the lab report.*
+
+## Question 2
+**Read in all the images in R and store them as a single data frame**
+```{r}
+files = list.files("./Hieroglyphics_Images")
+hieroglyphs = lapply(files, function (x) readPNG(paste('./Hieroglyphics_Images/',x,sep = "")))
+hieroglyphs_df <- data.frame(do.call(rbind, lapply(hieroglyphs, function(x) t(matrix(x)))))
+
+write.csv(hieroglyphs_df, "hieroglyphs.csv") #save the image dataframe as a csv file
+```
+
+```{r}
+hieroglyphs_df <- read.csv("hieroglyphs.csv") 
+```
+
+## Question 3
+**Compress the data with PCA**
+```{r}
+hieroglyphs_df.pca <- prcomp(hieroglyphs_df, scale. = TRUE)
+
+pca_var = hieroglyphs_df.pca$sdev^2          #calculate percentage of variance explained
+prop_varex = pca_var/sum(pca_var)
+variance_explained = cumsum(prop_varex)
+plot(variance_explained, type = 'b')
+variance_explained[2000]
+
+hier_pca_df <- data.frame(hieroglyphs_df.pca$x)
+write.csv(hier_pca_df, "hier_pca.csv")       #save the pca dataframe as a csv file
+```
+*Detailed answer provided in the lab report*
+## Question 4
+**Run some k-means clustering algorithm**
+```{r}
+clustering_model <- lapply(1:100, function (x) kmeans(hier_pca_df[,1:557],x,nstart=10, iter.max = 20))
+
+wss <- lapply(clustering_model, function(x) sum(x$tot.withinss)) #wss of all 100 different values of k
+bss <- lapply(clustering_model, function(x) sum(x$betweenss))   #bss of all 100 different values of k
+wss_df = data.frame(k = 1:100)
+bss_df = data.frame(k = 1:100)
+wss_df$WSS <- wss
+bss_df$BSS <- bss
+wss_df$WSS <- as.numeric(wss_df$WSS)
+bss_df$BSS <- as.numeric(bss_df$BSS)
+
+#plot k from 1 to 100
+plot(wss_df[1:100,'k'],wss_df[1:100,'WSS'], type = 'b', xlab = 'Number of Clusters', ylab = 'Within groups sum of squares')
+plot(bss_df[1:100,'k'],bss_df[1:100,'BSS'], type = 'b', xlab = 'Number of Clusters', ylab = 'Between-cluster sum of squares')
+
+#plot k from 1 to 60
+plot(wss_df[1:60,'k'],wss_df[1:60,'WSS'], type = 'b', xlab = 'Number of Clusters', ylab = 'Within groups sum of squares')
+plot(bss_df[1:60,'k'],bss_df[1:60,'BSS'], type = 'b', xlab = 'Number of Clusters', ylab = 'Between-cluster sum of squares')
+
+write.csv(wss_df, "wss.csv")      #save the wss and bss data into csv file for future use if needed
+write.csv(bss_df, "bss.csv")
+```
+*Detailed answer provided in the lab report*
+
+## Question 5
+**Perform the kmeans with your chosen k 1000 times, each time with 1 start**
+```{r}
+clustering_model2 <- lapply(1:1000, function (x) kmeans(hier_pca_df[,1:557],25,nstart=1, iter.max = 20))
+
+wss <- lapply(clustering_model2, function(x) sum(x$tot.withinss))    #get the wss data of 1000 different random starts
+wss_df_q5 = data.frame(k = 1:1000)
+wss_df_q5$WSS <- wss
+wss_df_q5$WSS <- as.numeric(wss_df_q5$WSS)
+
+write.csv(wss_df_q5, "wss_q5.csv")        #save the wss data of 1000 nstarts as a csv file
+ggplot(wss_df_q5, aes (WSS)) +
+  geom_histogram() +
+  labs(title = "Distribution of WSS given nstart = 1", x = "Within cluster sum of squares") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust=0.5))
+```
+```{r}
+clustering_model_final <- kmeans(hier_pca_df[,1:2000],25,nstart=20, iter.max = 20)
+```
+*Detailed answer provided in the lab report*
+
+## Question 6
+**Write each image to the folder corresponding to it's assigned cluster.**
+```{r}
+lapply(1:25, function (x) dir.create(paste("Cluster",x,sep = "_")))
+
+image_num = 1
+for (cluster_num in as.numeric(clustering_model_final$cluster)) {
+  setwd(paste("Cluster",as.numeric(cluster_num),sep = "_"))
+  writePNG(hieroglyphs[[image_num]], target = paste(image_num,".png",sep = ""))
+  setwd("~/Library/Mobile Documents/com~apple~CloudDocs/Downloads/DA 350/clustering")
+  image_num = image_num + 1
+}
+```
+*Detailed answer provided in the lab report*
+
+## Question 7
+```{r}
+#create a dataframe for the prediction set
+files = list.files("./Predictions")
+predictions = lapply(files, function(x) readPNG(paste('./Predictions/',x,sep = "")))
+predict_df <- data.frame(do.call(rbind, lapply(predictions, function(x) t(matrix(x)))))
+
+#scale the prediction set using loading vectors of traning data
+predict_scaled <- data.frame(predict(hieroglyphs_df.pca, newdata = predict_df))
+centers_df <- data.frame(clustering_model_final$centers)
+
+predict_cluster <- function(new_data) {
+  min_distance = dist(rbind(centers_df[1,],new_data))
+  cluster = 1
+  for (i in (2:25)) {
+    distance = dist(rbind(centers_df[i,],new_data), method = "euclidean")
+    if (distance < min_distance){
+      min_distance = distance
+      cluster = i
+    }
+  }
+  return (cluster)
+}
+#predict
+for (i in 1:10) {
+  print(predict_cluster(predict_scaled[i,]))
+}
+```
+*Detailed answer provided in the lab report*
+
